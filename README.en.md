@@ -1,5 +1,6 @@
 ﻿# Discord Exporter
 
+[![Tests](https://github.com/Agon1a/discord-exporter/actions/workflows/tests.yml/badge.svg)](https://github.com/Agon1a/discord-exporter/actions/workflows/tests.yml)
 Browser extension (Chrome/Edge, Manifest v3) that exports Discord Web messages to CSV for a chosen date range.
 
 ## Features

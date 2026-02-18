@@ -5,6 +5,9 @@
     maxLoops: 1200,
     noProgressLimit: 12
   };
+  const shared = window.DiscordExporterShared || {};
+  const parseDayRange = shared.parseDayRange;
+  const uniqueKey = shared.uniqueKey;
 
   /**
    * @typedef {Object} DiscordMessage
@@ -22,17 +25,6 @@
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
-  /**
-   * Converts date-only input into a full-day time range.
-   * @param {string} fromDay - Start date (YYYY-MM-DD).
-   * @param {string} toDay - End date (YYYY-MM-DD).
-   * @returns {{ from: Date, to: Date }}
-   */
-  function parseDayRange(fromDay, toDay) {
-    const from = new Date(fromDay + "T00:00:00");
-    const to = new Date(toDay + "T23:59:59");
-    return { from, to };
-  }
 
   /**
    * Finds the Discord messages list.
@@ -127,14 +119,6 @@
     return min;
   }
 
-  /**
-   * Creates a unique key for a message to deduplicate results.
-   * @param {DiscordMessage} m - Message data.
-   * @returns {string}
-   */
-  function uniqueKey(m) {
-    return `${m.time.toISOString()}|${m.author}|${m.text}`;
-  }
 
   /**
    * Dispatches a wheel event to scroll up.

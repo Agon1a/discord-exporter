@@ -29,6 +29,7 @@
                 "https://discord.com/channels/*"
             ],
             "js": [
+                "src/lib/shared-utils.js",
                 "src/lib/content-utils.js",
                 "src/content.js"
             ]

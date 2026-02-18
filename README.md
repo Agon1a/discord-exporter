@@ -1,5 +1,6 @@
 ﻿# Discord Exporter
 
+[![Tests](https://github.com/Agon1a/discord-exporter/actions/workflows/tests.yml/badge.svg)](https://github.com/Agon1a/discord-exporter/actions/workflows/tests.yml)
 Браузерное расширение (Chrome/Edge, Manifest v3) для экспорта сообщений из Discord Web в CSV по диапазону дат.
 
 English version: [README.en.md](README.en.md)
