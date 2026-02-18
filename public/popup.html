@@ -1,0 +1,54 @@
+﻿<!doctype html>
+<html>
+
+<head>
+  <meta charset="UTF-8" />
+  <title>Discord Export</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+  <main>
+    <header class="hero">
+      <div class="hero-top">
+        <div class="eyebrow">Discord Exporter</div>
+        <label class="theme-switch" title="Переключить тему">
+          <span>Тёмная тема</span>
+          <input type="checkbox" id="themeToggle" aria-label="Переключить тему">
+        </label>
+      </div>
+      <h1>Экспорт чата в CSV</h1>
+      <p class="subtitle">Выбери диапазон дат и скачай CSV с сообщениями выбранного канала.</p>
+    </header>
+
+    <section class="channel-card" aria-live="polite">
+      <div class="channel-avatar" id="channelAvatar">D</div>
+      <div class="channel-text">
+        <div class="channel-guild" id="channelGuild">Открытый канал</div>
+        <div class="channel-line">
+          <span class="channel-hash" id="channelPrefix">#</span>
+          <span class="channel-name" id="channelName">Проверяю активную вкладку...</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <label class="field">
+        <span class="label">С (дата)</span>
+        <input type="date" id="fromDate">
+      </label>
+      <label class="field">
+        <span class="label">По (дата)</span>
+        <input type="date" id="toDate">
+      </label>
+    </section>
+
+    <button id="exportBtn" class="primary">Экспортировать</button>
+    <div id="status" class="status" aria-live="polite"></div>
+  </main>
+
+  <script src="../src/lib/popup-utils.js"></script>
+  <script src="../src/popup.js"></script>
+</body>
+
+</html>
