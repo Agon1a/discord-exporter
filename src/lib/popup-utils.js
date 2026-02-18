@@ -3,8 +3,10 @@
   const API_MODE_KEY = "discordExporterApiMode";
   const API_BATCH_SIZE = 100;
   const API_MAX_PAGES = 400;
-  const DISCORD_EPOCH = 1420070400000n;
   const rootEl = document.documentElement;
+  const shared = window.DiscordExporterShared || {};
+  const parseDayRange = shared.parseDayRange;
+  const toCsv = shared.toCsv;
 
   /** @type {HTMLElement | null} */
   let statusEl = null;
@@ -198,28 +200,6 @@
     }
   }
 
-  /**
-   * Converts date-only input into a full-day time range.
-   * @param {string} fromDay - Start date (YYYY-MM-DD).
-   * @param {string} toDay - End date (YYYY-MM-DD).
-   * @returns {{ from: Date, to: Date }}
-   */
-  function parseDayRange(fromDay, toDay) {
-    const from = new Date(fromDay + "T00:00:00");
-    const to = new Date(toDay + "T23:59:59");
-    return { from, to };
-  }
-
-  /**
-   * Generates a Discord snowflake from a timestamp.
-   * @param {number} timestampMs - Timestamp in milliseconds.
-   * @returns {string}
-   */
-  function snowflakeFromTimestamp(timestampMs) {
-    const safeMs = Number.isFinite(timestampMs) ? timestampMs : Date.now();
-    const clamped = Math.max(safeMs, Number(DISCORD_EPOCH));
-    return ((BigInt(clamped) - DISCORD_EPOCH) << 22n).toString();
-  }
 
   /**
    * Updates the channel card in the UI.
@@ -393,27 +373,6 @@
     };
   }
 
-  /**
-   * Creates a unique key for exported rows.
-   * @param {CsvRow} row - Export row.
-   * @returns {string}
-   */
-  function uniqueKey(row) {
-    return `${row.time}|${row.author}|${row.text}`;
-  }
-
-  /**
-   * Converts message rows to CSV.
-   * @param {CsvRow[]} rows - Export rows.
-   * @returns {string}
-   */
-  function toCsv(rows) {
-    const header = ["Дата", "Автор", "Текст"];
-    const esc = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
-    const lines = [header.map(esc).join(",")];
-    for (const r of rows) lines.push([r.time, r.author, r.text].map(esc).join(","));
-    return lines.join("\n");
-  }
 
   /**
    * Fetches messages through the Discord web session.
