@@ -1,5 +1,9 @@
 ﻿(() => {
   const THEME_KEY = "discordExporterTheme";
+  const API_MODE_KEY = "discordExporterApiMode";
+  const API_BATCH_SIZE = 100;
+  const API_MAX_PAGES = 400;
+  const DISCORD_EPOCH = 1420070400000n;
   const rootEl = document.documentElement;
 
   /** @type {HTMLElement | null} */
@@ -16,6 +20,10 @@
   let channelPrefixEl = null;
   /** @type {HTMLButtonElement | null} */
   let exportBtn = null;
+  /** @type {HTMLInputElement | null} */
+  let apiModeToggle = null;
+  /** @type {HTMLElement | null} */
+  let apiBody = null;
 
   /**
    * @typedef {"light" | "dark"} Theme
@@ -44,6 +52,20 @@
    */
 
   /**
+   * @typedef {Object} DiscordChannelUrl
+   * @property {string} guildId
+   * @property {string} channelId
+   * @property {boolean} isDM
+   */
+
+  /**
+   * @typedef {Object} ApiFetchResult
+   * @property {boolean} ok
+   * @property {CsvRow[]} [data]
+   * @property {string} [error]
+   */
+
+  /**
    * Caches DOM elements used by the popup.
    * @returns {void}
    */
@@ -55,6 +77,8 @@
     channelNameEl = document.getElementById("channelName");
     channelPrefixEl = document.getElementById("channelPrefix");
     exportBtn = document.getElementById("exportBtn");
+    apiModeToggle = document.getElementById("apiModeToggle");
+    apiBody = document.getElementById("apiBody");
   }
 
   /**
@@ -103,6 +127,43 @@
   }
 
   /**
+   * Reads the saved API mode value.
+   * @returns {boolean}
+   */
+  function getSavedApiMode() {
+    const value = localStorage.getItem(API_MODE_KEY);
+    if (value === null) return true;
+    return value === "true";
+  }
+
+  /**
+   * Applies API mode UI state.
+   * @param {boolean} isEnabled - Whether API mode is enabled.
+   * @param {boolean} [persist=false] - Whether to persist the value.
+   * @returns {void}
+   */
+  function applyApiMode(isEnabled, persist = false) {
+    if (apiModeToggle) {
+      apiModeToggle.checked = isEnabled;
+    }
+    if (apiBody) {
+      apiBody.hidden = !isEnabled;
+    }
+    if (persist) {
+      localStorage.setItem(API_MODE_KEY, isEnabled ? "true" : "false");
+    }
+  }
+
+  /**
+   * Handles the API mode toggle change.
+   * @returns {void}
+   */
+  function onApiModeToggleChange() {
+    const enabled = !!apiModeToggle?.checked;
+    applyApiMode(enabled, true);
+  }
+
+  /**
    * Checks whether the URL points to a Discord channel page.
    * @param {string} url - URL to validate.
    * @returns {boolean}
@@ -116,6 +177,48 @@
     } catch {
       return false;
     }
+  }
+
+  /**
+   * Parses channel information from a Discord URL.
+   * @param {string} url - Discord channel URL.
+   * @returns {DiscordChannelUrl | null}
+   */
+  function parseDiscordChannelUrl(url) {
+    try {
+      const u = new URL(url);
+      const parts = u.pathname.split("/").filter(Boolean);
+      if (parts[0] !== "channels") return null;
+      const guildId = parts[1];
+      const channelId = parts[3] || parts[2];
+      if (!guildId || !channelId) return null;
+      return { guildId, channelId, isDM: guildId === "@me" };
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Converts date-only input into a full-day time range.
+   * @param {string} fromDay - Start date (YYYY-MM-DD).
+   * @param {string} toDay - End date (YYYY-MM-DD).
+   * @returns {{ from: Date, to: Date }}
+   */
+  function parseDayRange(fromDay, toDay) {
+    const from = new Date(fromDay + "T00:00:00");
+    const to = new Date(toDay + "T23:59:59");
+    return { from, to };
+  }
+
+  /**
+   * Generates a Discord snowflake from a timestamp.
+   * @param {number} timestampMs - Timestamp in milliseconds.
+   * @returns {string}
+   */
+  function snowflakeFromTimestamp(timestampMs) {
+    const safeMs = Number.isFinite(timestampMs) ? timestampMs : Date.now();
+    const clamped = Math.max(safeMs, Number(DISCORD_EPOCH));
+    return ((BigInt(clamped) - DISCORD_EPOCH) << 22n).toString();
   }
 
   /**
@@ -155,7 +258,7 @@
     if (!channelGuildEl || !channelNameEl) return;
     setChannelCard({
       guildName: "Открытый канал",
-      channelName: "Проверяю активную вкладку...",
+      channelName: "Проверяется активная вкладка...",
       channelPrefix: "#"
     });
 
@@ -163,7 +266,7 @@
     if (!tab?.id || !isDiscordChannelsUrl(tab.url)) {
       setChannelCard({
         guildName: "Открытый канал",
-        channelName: "Открой Discord Web и нужный канал",
+        channelName: "Откройте Discord Web и нужный канал",
         channelPrefix: "#"
       });
       return;
@@ -291,6 +394,15 @@
   }
 
   /**
+   * Creates a unique key for exported rows.
+   * @param {CsvRow} row - Export row.
+   * @returns {string}
+   */
+  function uniqueKey(row) {
+    return `${row.time}|${row.author}|${row.text}`;
+  }
+
+  /**
    * Converts message rows to CSV.
    * @param {CsvRow[]} rows - Export rows.
    * @returns {string}
@@ -304,6 +416,211 @@
   }
 
   /**
+   * Fetches messages through the Discord web session.
+   * Runs inside the Discord tab via executeScript.
+   * @async
+   * @param {string} channelId - Channel id.
+   * @param {number} fromMs - Start timestamp (ms).
+   * @param {number} toMs - End timestamp (ms).
+   * @param {number} batchSize - Page size.
+   * @param {number} maxPages - Max number of pages.
+   * @returns {Promise<ApiFetchResult>}
+   */
+  async function fetchMessagesViaApiInPage(channelId, fromMs, toMs, batchSize, maxPages) {
+    const DISCORD_EPOCH_LOCAL = 1420070400000n;
+
+    /**
+     * Builds a snowflake from timestamp.
+     * @param {number} timestamp - Timestamp in milliseconds.
+     * @returns {string}
+     */
+    function snowflakeFromTimestampLocal(timestamp) {
+      const safeMs = Number.isFinite(timestamp) ? timestamp : Date.now();
+      const clamped = Math.max(safeMs, Number(DISCORD_EPOCH_LOCAL));
+      return ((BigInt(clamped) - DISCORD_EPOCH_LOCAL) << 22n).toString();
+    }
+
+    /**
+     * Waits for a given number of milliseconds.
+     * @param {number} ms - Delay in milliseconds.
+     * @returns {Promise<void>}
+     */
+    function sleepLocal(ms) {
+      return new Promise((resolve) => setTimeout(resolve, ms));
+    }
+
+    /**
+     * Performs a fetch request with rate-limit handling.
+     * @async
+     * @param {string} url - Request URL.
+     * @param {string} token - Authorization token.
+     * @returns {Promise<any>}
+     */
+    async function fetchJson(url, token) {
+      while (true) {
+        const res = await fetch(url, {
+          headers: {
+            Authorization: token
+          }
+        });
+
+        if (res.status === 429) {
+          const data = await res.json().catch(() => ({}));
+          const retryAfter = Number(data?.retry_after || 1);
+          const waitMs = Math.max(1000, Math.ceil(retryAfter * 1000));
+          await sleepLocal(waitMs);
+          continue;
+        }
+
+        if (!res.ok) {
+          const text = await res.text();
+          let message = text;
+          try {
+            const parsed = JSON.parse(text);
+            if (parsed?.message) message = parsed.message;
+          } catch {
+            // ignore
+          }
+          throw new Error(`API ${res.status}: ${message || res.statusText}`);
+        }
+
+        return res.json();
+      }
+    }
+
+    const rawToken = localStorage.getItem("token") || "";
+    const token = rawToken.replace(/^"|"$/g, "");
+    if (!token) {
+      return { ok: false, error: "TOKEN_MISSING" };
+    }
+
+    const from = Number.isFinite(fromMs) ? fromMs : Date.now();
+    const to = Number.isFinite(toMs) ? toMs : Date.now();
+
+    const rowsMap = new Map();
+    let before = snowflakeFromTimestampLocal(to + 1);
+    let pages = 0;
+    let done = false;
+    const apiBase = `${location.origin}/api/v10`;
+
+    while (!done && pages < maxPages) {
+      const url = `${apiBase}/channels/${channelId}/messages?limit=${batchSize}&before=${before}`;
+      const batch = await fetchJson(url, token);
+
+      if (!Array.isArray(batch) || batch.length === 0) break;
+
+      for (const msg of batch) {
+        const messageTime = Date.parse(msg.timestamp);
+        if (Number.isNaN(messageTime)) continue;
+        if (messageTime > to) continue;
+        if (messageTime < from) {
+          done = true;
+          break;
+        }
+
+        const text = (msg.content || "").trim();
+        if (!text) continue;
+
+        const author = msg.author?.global_name || msg.author?.username || "Unknown";
+        const row = { time: msg.timestamp, author, text };
+        rowsMap.set(`${row.time}|${row.author}|${row.text}`, row);
+      }
+
+      pages += 1;
+      const last = batch[batch.length - 1];
+      before = last?.id || before;
+    }
+
+    const rows = Array.from(rowsMap.values()).sort(
+      (a, b) => new Date(a.time).getTime() - new Date(b.time).getTime()
+    );
+
+    return { ok: true, data: rows };
+  }
+
+  /**
+   * Exports messages via Discord API using the current session.
+   * @async
+   * @param {string} fromDate - Start date (YYYY-MM-DD).
+   * @param {string} toDate - End date (YYYY-MM-DD).
+   * @returns {Promise<boolean>}
+   */
+  async function exportViaApi(fromDate, toDate) {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tab?.id || !tab.url) {
+      setStatus("Быстрый режим: не удалось определить активную вкладку.");
+      return false;
+    }
+
+    if (!isDiscordChannelsUrl(tab.url)) {
+      setStatus("Быстрый режим: откройте Discord Web на странице канала.");
+      return false;
+    }
+
+    const parsed = parseDiscordChannelUrl(tab.url);
+    if (!parsed) {
+      setStatus("Быстрый режим: не удалось определить канал из URL.");
+      return false;
+    }
+
+    if (parsed.isDM) {
+      setStatus("Быстрый режим не поддерживает личные сообщения.");
+      return false;
+    }
+
+    const { from, to } = parseDayRange(fromDate, toDate);
+    if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) {
+      setStatus("Быстрый режим: неверный формат дат.");
+      return false;
+    }
+
+    setStatus("Быстрый режим: выполняется загрузка сообщений...");
+
+    try {
+      const [{ result }] = await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        func: fetchMessagesViaApiInPage,
+        args: [parsed.channelId, from.getTime(), to.getTime(), API_BATCH_SIZE, API_MAX_PAGES]
+      });
+
+      if (!result?.ok) {
+        if (result?.error === "TOKEN_MISSING") {
+          setStatus("Быстрый режим: нет доступа к сессии. Выполняется переключение на обычный экспорт...");
+        } else {
+          setStatus("Быстрый режим: не удалось получить сообщения. Выполняется переключение...");
+        }
+        return false;
+      }
+
+      const rows = result.data || [];
+      if (!rows.length) {
+        setStatus("Быстрый режим: сообщения не найдены.");
+        return true;
+      }
+
+      const csv = toCsv(rows);
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `discord_export_${fromDate}_to_${toDate}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+
+      setStatus(`Готово: сообщений ${rows.length}\nCSV скачан.`);
+      return true;
+    } catch (e) {
+      const message = String(e?.message || e);
+      if (message.includes("401") || message.includes("403")) {
+        setStatus("Быстрый режим: нет доступа. Выполняется переключение на обычный экспорт...");
+      } else {
+        setStatus("Быстрый режим: ошибка запроса. Выполняется переключение...");
+      }
+      return false;
+    }
+  }
+
+  /**
    * Builds a response handler for export completion.
    * @param {string} fromDate - From date.
    * @param {string} toDate - To date.
@@ -314,10 +631,10 @@
       if (chrome.runtime.lastError) {
         setStatus(
           "Нет ответа от страницы.\n" +
-          "Сделай так:\n" +
-          "1) Открой канал Discord в браузере\n" +
-          "2) Нажми F5 (обновить)\n" +
-          "3) Открой расширение и попробуй снова\n\n" +
+          "Сделайте так:\n" +
+          "1) Откройте канал Discord в браузере\n" +
+          "2) Нажмите F5 (обновить)\n" +
+          "3) Откройте расширение и попробуйте снова\n\n" +
           chrome.runtime.lastError.message
         );
         return;
@@ -355,23 +672,13 @@
   }
 
   /**
-   * Handles the export button click.
+   * Exports messages using the existing scroll-based approach.
    * @async
+   * @param {string} fromDate - Start date.
+   * @param {string} toDate - End date.
    * @returns {Promise<void>}
    */
-  async function onExportClick() {
-    const fromDate = document.getElementById("fromDate").value;
-    const toDate = document.getElementById("toDate").value;
-
-    if (!fromDate || !toDate) {
-      setStatus("Укажи обе даты.");
-      return;
-    }
-    if (fromDate > toDate) {
-      setStatus("Дата 'С' не может быть позже даты 'По'.");
-      return;
-    }
-
+  async function exportViaScroll(fromDate, toDate) {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (!tab?.id) {
       setStatus("Не удалось определить активную вкладку.");
@@ -379,12 +686,12 @@
     }
     if (!isDiscordChannelsUrl(tab.url)) {
       setStatus(
-        "Открой Discord Web именно на странице канала:\nhttps://discord.com/channels/..."
+        "Откройте Discord Web именно на странице канала:\nhttps://discord.com/channels/..."
       );
       return;
     }
 
-    setStatus("Внедряю скрипт на страницу...");
+    setStatus("Выполняется внедрение скрипта на страницу...");
 
     try {
       await chrome.scripting.executeScript({
@@ -394,13 +701,13 @@
     } catch (e) {
       setStatus(
         "Не удалось внедрить скрипт.\n" +
-        "Попробуй обновить вкладку Discord (F5) и повторить.\n\n" +
+        "Попробуйте обновить вкладку Discord (F5) и повторить.\n\n" +
         String(e)
       );
       return;
     }
 
-    setStatus("Запускаю экспорт (автопрокрутка вверх)...");
+    setStatus("Запуск экспорта (автопрокрутка вверх)...");
 
     chrome.tabs.sendMessage(
       tab.id,
@@ -410,15 +717,49 @@
   }
 
   /**
+   * Handles the export button click.
+   * @async
+   * @returns {Promise<void>}
+   */
+  async function onExportClick() {
+    const fromDate = document.getElementById("fromDate").value;
+    const toDate = document.getElementById("toDate").value;
+
+    if (!fromDate || !toDate) {
+      setStatus("Укажите обе даты.");
+      return;
+    }
+    if (fromDate > toDate) {
+      setStatus("Дата 'С' не может быть позже даты 'По'.");
+      return;
+    }
+
+    if (apiModeToggle?.checked) {
+      const apiSucceeded = await exportViaApi(fromDate, toDate);
+      if (!apiSucceeded) {
+        await exportViaScroll(fromDate, toDate);
+      }
+      return;
+    }
+
+    await exportViaScroll(fromDate, toDate);
+  }
+
+  /**
    * Initializes the popup UI and listeners.
    * @returns {void}
    */
   function initPopup() {
     cacheElements();
     applyTheme(getPreferredTheme(THEME_KEY));
+    applyApiMode(getSavedApiMode());
 
     if (themeToggle) {
       themeToggle.addEventListener("change", onThemeToggleChange);
+    }
+
+    if (apiModeToggle) {
+      apiModeToggle.addEventListener("change", onApiModeToggleChange);
     }
 
     if (exportBtn) {

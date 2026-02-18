@@ -5,6 +5,7 @@ Browser extension (Chrome/Edge, Manifest v3) that exports Discord Web messages t
 ## Features
 - Export messages in a selected date range to CSV.
 - Auto-scrolls upward to load channel history.
+- Fast mode without scrolling (uses the current Discord session when available).
 - Shows the currently opened channel (server + channel) in the popup UI.
 - Light/dark theme toggle with saved preference.
 - Works on `discord.com`, `ptb.discord.com`, and `canary.discord.com`.
@@ -17,24 +18,30 @@ Browser extension (Chrome/Edge, Manifest v3) that exports Discord Web messages t
 ## Usage
 1. Open Discord Web and go to a channel (URL like `https://discord.com/channels/...`).
 2. Open the extension and set the **From** and **To** dates.
-3. Click **Export**. A file named `discord_export_YYYY-MM-DD_to_YYYY-MM-DD.csv` will be downloaded.
+3. Optionally enable **Fast mode** (no scrolling).
+4. Click **Export**. A file named `discord_export_YYYY-MM-DD_to_YYYY-MM-DD.csv` will be downloaded.
+
+## Fast mode
+- Uses the current Discord session in the active tab.
+- If fast mode is not available, the extension automatically falls back to the default scroll export.
+- Direct messages (DMs) are not supported.
 
 ## Project Structure
-- `public/popup.html` — popup UI.
-- `public/styles.css` — popup styles.
-- `public/icons/` — extension icons.
-- `src/lib/popup-utils.js` — popup logic (theme, CSV, messaging, channel metadata).
-- `src/lib/content-utils.js` — scrolling and message collection logic.
-- `src/popup.js` — bootstraps `window.DiscordExporterPopup.init()`.
-- `src/content.js` — bootstraps `window.DiscordExporterContent.init()`.
-- `manifest.json` — extension manifest.
+- `public/popup.html` - popup UI.
+- `public/styles.css` - popup styles.
+- `public/icons/` - extension icons.
+- `src/lib/popup-utils.js` - popup logic (theme, CSV, messaging, channel metadata, fast mode).
+- `src/lib/content-utils.js` - scrolling and message collection logic.
+- `src/popup.js` - bootstraps `window.DiscordExporterPopup.init()`.
+- `src/content.js` - bootstraps `window.DiscordExporterContent.init()`.
+- `manifest.json` - extension manifest.
 
 ## Export Tuning
 You can tweak behavior in `src/lib/content-utils.js`:
-- `stepPx` — scroll step (px).
-- `waitMs` — wait time after each step.
-- `maxLoops` — maximum iterations.
-- `noProgressLimit` — retry limit when no progress is detected.
+- `stepPx` - scroll step (px).
+- `waitMs` - wait time after each step.
+- `maxLoops` - maximum iterations.
+- `noProgressLimit` - retry limit when no progress is detected.
 
 ## Limitations and Notes
 - Export depends on Discord DOM structure. If Discord changes it, selectors may break.
