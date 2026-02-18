@@ -18,7 +18,7 @@
         </label>
       </div>
       <h1>Экспорт чата в CSV</h1>
-      <p class="subtitle">Выбери диапазон дат и скачай CSV с сообщениями выбранного канала.</p>
+      <p class="subtitle">Выберите диапазон дат и скачайте CSV с сообщениями выбранного канала.</p>
     </header>
 
     <section class="channel-card" aria-live="polite">
@@ -27,8 +27,24 @@
         <div class="channel-guild" id="channelGuild">Открытый канал</div>
         <div class="channel-line">
           <span class="channel-hash" id="channelPrefix">#</span>
-          <span class="channel-name" id="channelName">Проверяю активную вкладку...</span>
+          <span class="channel-name" id="channelName">Проверяется активная вкладка...</span>
         </div>
+      </div>
+    </section>
+
+    <section class="api-card">
+      <div class="api-header">
+        <div class="api-title-group">
+          <div class="api-title">Быстрый режим</div>
+          <div class="api-subtitle">Без прокрутки страницы (использует текущую сессию Discord)</div>
+        </div>
+        <label class="mode-switch" title="Включить быстрый режим">
+          <span>FAST</span>
+          <input type="checkbox" id="apiModeToggle" aria-label="Быстрый режим">
+        </label>
+      </div>
+      <div class="api-body" id="apiBody">
+        <p class="api-note">Если быстрый режим недоступен, расширение автоматически переключится на обычный экспорт.</p>
       </div>
     </section>
 

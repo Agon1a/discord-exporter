@@ -10,7 +10,10 @@
     "host_permissions": [
         "https://discord.com/*",
         "https://ptb.discord.com/*",
-        "https://canary.discord.com/*"
+        "https://canary.discord.com/*",
+        "https://discord.com/api/*",
+        "https://ptb.discord.com/api/*",
+        "https://canary.discord.com/api/*"
     ],
     "action": {
         "default_popup": "public/popup.html",
