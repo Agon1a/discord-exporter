@@ -216,6 +216,21 @@
         }
       }
 
+      // Send progress to popup
+      try {
+        if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
+          chrome.runtime.sendMessage({
+            action: 'EXPORT_PROGRESS',
+            collected: map.size,
+            loops: loops
+          }).catch(() => {
+            // Popup might be closed, ignore
+          });
+        }
+      } catch (e) {
+        // Ignore errors
+      }
+
       const earliest = getEarliestVisibleTime(listEl);
 
       if (earliest && earliest <= from) break;

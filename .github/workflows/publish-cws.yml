@@ -1,0 +1,148 @@
+name: Publish to Chrome Web Store
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to publish (e.g., 1.2.0)'
+        required: true
+        type: string
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          ref: main
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+
+      - name: Prepare extension package
+        id: prepare
+        run: |
+          # Get version from release or input
+          VERSION="${{ github.event.release.tag_name || github.event.inputs.version }}"
+          VERSION=${VERSION#v}  # Remove 'v' prefix
+          
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "📦 Preparing v$VERSION for upload..."
+          
+          # Create dist directory
+          mkdir -p dist
+          
+          # Copy only necessary files (exclude test, .git, node_modules)
+          rsync -av --exclude-from=.gitignore \
+            --exclude='.git' \
+            --exclude='node_modules' \
+            --exclude='tests' \
+            --exclude='.github' \
+            --exclude='README*' \
+            --exclude='CHANGELOG.md' \
+            --exclude='scripts' \
+            --exclude='*.md' \
+            . dist/
+          
+          # Create zip
+          cd dist && zip -r ../discord-exporter-$VERSION.zip .
+          cd ..
+          
+          echo "✓ Package created: discord-exporter-$VERSION.zip"
+          ls -lh discord-exporter-$VERSION.zip
+
+      - name: Upload to Chrome Web Store
+        if: env.CHROME_EXTENSION_ID != ''
+        env:
+          CHROME_EXTENSION_ID: ${{ secrets.CHROME_EXTENSION_ID }}
+          CHROME_CLIENT_ID: ${{ secrets.CHROME_CLIENT_ID }}
+          CHROME_CLIENT_SECRET: ${{ secrets.CHROME_CLIENT_SECRET }}
+          CHROME_REFRESH_TOKEN: ${{ secrets.CHROME_REFRESH_TOKEN }}
+        run: |
+          VERSION="${{ steps.prepare.outputs.version }}"
+          ZIP_FILE="discord-exporter-$VERSION.zip"
+          
+          echo "🚀 Uploading to Chrome Web Store..."
+          
+          # Get access token
+          ACCESS_TOKEN=$(curl -s -X POST https://oauth2.googleapis.com/token \
+            -d "client_id=$CHROME_CLIENT_ID" \
+            -d "client_secret=$CHROME_CLIENT_SECRET" \
+            -d "refresh_token=$CHROME_REFRESH_TOKEN" \
+            -d "grant_type=refresh_token" | jq -r '.access_token')
+          
+          if [ -z "$ACCESS_TOKEN" ] || [ "$ACCESS_TOKEN" = "null" ]; then
+            echo "❌ Failed to get access token"
+            exit 1
+          fi
+          
+          echo "✓ Access token obtained"
+          
+          # Upload to Chrome Web Store
+          RESPONSE=$(curl -s -X PUT \
+            -H "Authorization: Bearer $ACCESS_TOKEN" \
+            -H "x-goog-api-client: gapic/0.1.0" \
+            -F "package=@$ZIP_FILE" \
+            "https://www.googleapis.com/uploads/chrome/v/items/$CHROME_EXTENSION_ID/versions")
+          
+          echo "$RESPONSE" | jq .
+          
+          # Check if upload was successful
+          if echo "$RESPONSE" | jq -e '.error' >/dev/null 2>&1; then
+            echo "❌ Upload failed"
+            exit 1
+          fi
+          
+          echo "✓ Upload successful!"
+          echo "🔄 Extension is now being reviewed (can take up to 1 hour)"
+
+      - name: Publish to Chrome Web Store (Alternative - mpnao305/chrome-extension-upload)
+        if: false  # Set to true if using mnao305 action instead
+        uses: mnao305/chrome-extension-upload@v4
+        with:
+          file-path: discord-exporter-${{ steps.prepare.outputs.version }}.zip
+          extension-id: ${{ secrets.CHROME_EXTENSION_ID }}
+          client-id: ${{ secrets.CHROME_CLIENT_ID }}
+          client-secret: ${{ secrets.CHROME_CLIENT_SECRET }}
+          refresh-token: ${{ secrets.CHROME_REFRESH_TOKEN }}
+
+      - name: Post release comment
+        if: github.event.release
+        uses: actions/github-script@v6
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `Chrome Web Store upload completed for version ${{ steps.prepare.outputs.version }}.\n\n**Update status:** Extension review is in progress. Store publication usually completes within about 1 hour.\n\n**Dashboard:** https://chrome.google.com/webstore/developer/dashboard`
+            })
+
+      - name: Notify on failed upload
+        if: failure()
+        uses: actions/github-script@v6
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `❌ Failed to upload extension to Chrome Web Store.\n\n**Troubleshooting:**\n- Check GitHub Secrets are configured (CHROME_EXTENSION_ID, CHROME_CLIENT_ID, etc.)\n- Verify refresh token is still valid\n- Check Chrome Web Store API is enabled\n\n📝 See [workflow logs](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}) for details.`
+            })
+
+      - name: Summary
+        run: |
+          echo "## Chrome Web Store Upload" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Version:** ${{ steps.prepare.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Status:** Uploaded (review in progress)" >> $GITHUB_STEP_SUMMARY
+          echo "- **ETA:** ~1 hour for approval" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "[View on Chrome Web Store](https://chrome.google.com/webstore/developer/dashboard)" >> $GITHUB_STEP_SUMMARY

@@ -1,12 +1,20 @@
 ﻿(() => {
   const THEME_KEY = "discordExporterTheme";
   const API_MODE_KEY = "discordExporterApiMode";
+  const LAST_DATES_KEY = "discordExporterLastDates";
   const API_BATCH_SIZE = 100;
   const API_MAX_PAGES = 400;
   const rootEl = document.documentElement;
   const shared = window.DiscordExporterShared || {};
   const parseDayRange = shared.parseDayRange;
   const toCsv = shared.toCsv;
+  const csvExporter = window.DiscordExporterCsvExporter || {};
+  const jsonExporter = window.DiscordExporterJsonExporter || {};
+  const markdownExporter = window.DiscordExporterMarkdownExporter || {};
+  const errorHandler = window.DiscordExporterErrorHandler || {};
+  const filters = window.DiscordExporterFilters || {};
+  const perf = window.DiscordExporterPerformance || {};
+  const i18n = window.DiscordExporterI18n || {};
 
   /** @type {HTMLElement | null} */
   let statusEl = null;
@@ -26,6 +34,16 @@
   let apiModeToggle = null;
   /** @type {HTMLElement | null} */
   let apiBody = null;
+  /** @type {HTMLElement | null} */
+  let progressEl = null;
+  /** @type {HTMLElement | null} */
+  let progressCountEl = null;
+  /** @type {HTMLInputElement | null} */
+  let fromDateEl = null;
+  /** @type {HTMLInputElement | null} */
+  let toDateEl = null;
+  /** @type {NodeListOf<HTMLInputElement> | null} */
+  let exportFormatRadios = null;
 
   /**
    * @typedef {"light" | "dark"} Theme
@@ -68,6 +86,74 @@
    */
 
   /**
+   * Converts YYYY-MM-DD to date string for input[type="date"].
+   * @param {Date} date - Date object.
+   * @returns {string} - YYYY-MM-DD format.
+   */
+  function dateToInputValue(date) {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+
+  /**
+   * Sets date range using quick picker.
+   * @param {number} daysBack - Number of days back from today.
+   * @returns {void}
+   */
+  function setQuickDateRange(daysBack) {
+    if (!fromDateEl || !toDateEl) return;
+    
+    const today = new Date();
+    const startDate = new Date(today);
+    startDate.setDate(startDate.getDate() - daysBack);
+    
+    fromDateEl.value = dateToInputValue(startDate);
+    toDateEl.value = dateToInputValue(today);
+    
+    saveDates();
+  }
+
+  /**
+   * Saves the current date range to localStorage.
+   * @returns {void}
+   */
+  function saveDates() {
+    if (!fromDateEl || !toDateEl) return;
+    const dates = {
+      from: fromDateEl.value,
+      to: toDateEl.value
+    };
+    localStorage.setItem(LAST_DATES_KEY, JSON.stringify(dates));
+  }
+
+  /**
+   * Loads the last date range from localStorage.
+   * @returns {void}
+   */
+  function loadLastDates() {
+    if (!fromDateEl || !toDateEl) return;
+    
+    const stored = localStorage.getItem(LAST_DATES_KEY);
+    if (stored) {
+      try {
+        const dates = JSON.parse(stored);
+        if (dates.from && dates.to) {
+          fromDateEl.value = dates.from;
+          toDateEl.value = dates.to;
+          return;
+        }
+      } catch {
+        // Ignore parse errors
+      }
+    }
+    
+    // Default: last 7 days
+    setQuickDateRange(7);
+  }
+
+  /**
    * Caches DOM elements used by the popup.
    * @returns {void}
    */
@@ -81,6 +167,11 @@
     exportBtn = document.getElementById("exportBtn");
     apiModeToggle = document.getElementById("apiModeToggle");
     apiBody = document.getElementById("apiBody");
+    progressEl = document.getElementById("exportProgress");
+    progressCountEl = document.getElementById("progressCount");
+    fromDateEl = document.getElementById("fromDate");
+    toDateEl = document.getElementById("toDate");
+    exportFormatRadios = document.querySelectorAll('input[name="exportFormat"]');
   }
 
   /**
@@ -580,6 +671,42 @@
   }
 
   /**
+   * Gets the selected export format.
+   * @returns {"csv" | "json" | "markdown"}
+   */
+  function getSelectedExportFormat() {
+    if (!exportFormatRadios) return "csv";
+    for (const radio of exportFormatRadios) {
+      if (radio.checked) return radio.value || "csv";
+    }
+    return "csv";
+  }
+
+  /**
+   * Gets the filter configuration from UI.
+   * @returns {Object}
+   */
+  function getFilterConfig() {
+    const author = document.getElementById("filterAuthor")?.value || "";
+    const keywordsStr = document.getElementById("filterKeywords")?.value || "";
+    const keywords = keywordsStr
+      .split(",")
+      .map(k => k.trim())
+      .filter(k => k.length > 0);
+    const matchAll = document.getElementById("filterMatchAll")?.checked || false;
+    const excludeBots = document.getElementById("filterExcludeBots")?.checked || false;
+    const removeDuplicates = document.getElementById("filterRemoveDuplicates")?.checked !== false;
+
+    return {
+      author,
+      keywords,
+      keywordsMatchAll: matchAll,
+      excludeBots,
+      removeDuplicates
+    };
+  }
+
+  /**
    * Builds a response handler for export completion.
    * @param {string} fromDate - From date.
    * @param {string} toDate - To date.
@@ -601,6 +728,9 @@
 
       if (!response?.ok) {
         setStatus("Ошибка: " + (response?.error || "неизвестно"));
+        // Hide progress
+        if (progressEl) progressEl.style.display = 'none';
+        if (progressCountEl) progressCountEl.style.display = 'none';
         return;
       }
 
@@ -613,20 +743,78 @@
           "- Discord еще не успел полностью загрузить канал\n" +
           "- селекторы поменялись (редко, но бывает)"
         );
+        if (progressEl) progressEl.style.display = 'none';
+        if (progressCountEl) progressCountEl.style.display = 'none';
         return;
       }
 
-      const csv = toCsv(msgs);
+      // Apply filters
+      const filterConfig = getFilterConfig();
+      let filteredMsgs = msgs;
+      if (filters.applyFilters) {
+        filteredMsgs = filters.applyFilters(msgs, filterConfig);
+      }
 
-      const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `discord_export_${fromDate}_to_${toDate}.csv`;
-      a.click();
-      URL.revokeObjectURL(url);
+      if (filteredMsgs.length === 0) {
+        setStatus(
+          "После применения фильтров сообщений не осталось.\n" +
+          "Проверьте параметры фильтров (автор, ключевые слова)."
+        );
+        if (progressEl) progressEl.style.display = 'none';
+        if (progressCountEl) progressCountEl.style.display = 'none';
+        return;
+      }
 
-      setStatus(`Готово: сообщений ${msgs.length}\nCSV скачан.`);
+      const format = getSelectedExportFormat();
+      let content = "";
+      let filename = "";
+      let type = "text/plain";
+
+      try {
+        switch (format) {
+          case "json":
+            content = jsonExporter.toJson?.(filteredMsgs, {
+              channelName: channelNameEl?.textContent || "Unknown",
+              serverName: channelGuildEl?.textContent || "Unknown",
+              dateFrom: fromDate,
+              dateTo: toDate
+            }) || "";
+            filename = jsonExporter.generateFilename?.(channelNameEl?.textContent || "export", fromDate, toDate) || `export_${Date.now()}.json`;
+            type = "application/json;charset=utf-8";
+            break;
+          case "markdown":
+            content = markdownExporter.toMarkdown?.(filteredMsgs, {
+              channelName: channelNameEl?.textContent || "Unknown",
+              serverName: channelGuildEl?.textContent || "Unknown",
+              dateFrom: fromDate,
+              dateTo: toDate
+            }) || "";
+            filename = markdownExporter.generateFilename?.(channelNameEl?.textContent || "export", fromDate, toDate) || `export_${Date.now()}.md`;
+            type = "text/markdown;charset=utf-8";
+            break;
+          case "csv":
+          default:
+            content = csvExporter.toCsv?.(filteredMsgs) || toCsv(filteredMsgs);
+            filename = csvExporter.generateFilename?.(channelNameEl?.textContent || "export", fromDate, toDate) || `discord_export_${fromDate}_to_${toDate}.csv`;
+            type = "text/csv;charset=utf-8";
+        }
+
+        const blob = new Blob([content], { type });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = filename;
+        a.click();
+        URL.revokeObjectURL(url);
+
+        setStatus(`Готово: собрано ${msgs.length}, экспортировано ${filteredMsgs.length}\n${format.toUpperCase()} скачан.`);
+      } catch (e) {
+        setStatus(`Ошибка при экспорте: ${e.message}`);
+      }
+
+      // Hide progress
+      if (progressEl) progressEl.style.display = 'none';
+      if (progressCountEl) progressCountEl.style.display = 'none';
     };
   }
 
@@ -676,6 +864,25 @@
   }
 
   /**
+   * Shows a preview of the export parameters.
+   * @returns {void}
+   */
+  function showExportPreview() {
+    const fromDate = fromDateEl?.value || "?";
+    const toDate = toDateEl?.value || "?";
+    const format = getSelectedExportFormat().toUpperCase();
+    const mode = apiModeToggle?.checked ? "API" : "Прокрутка";
+
+    setStatus(
+      `📋 Предпросмотр экспорта:\n` +
+      `Диапазон: ${fromDate} → ${toDate}\n` +
+      `Формат: ${format}\n` +
+      `Режим: ${mode}\n` +
+      `→ Нажмите "Экспортировать" для начала`
+    );
+  }
+
+  /**
    * Handles the export button click.
    * @async
    * @returns {Promise<void>}
@@ -713,6 +920,17 @@
     applyTheme(getPreferredTheme(THEME_KEY));
     applyApiMode(getSavedApiMode());
 
+    // Load last dates
+    loadLastDates();
+    
+    // Add change listeners to save dates
+    if (fromDateEl) {
+      fromDateEl.addEventListener("change", saveDates);
+    }
+    if (toDateEl) {
+      toDateEl.addEventListener("change", saveDates);
+    }
+
     if (themeToggle) {
       themeToggle.addEventListener("change", onThemeToggleChange);
     }
@@ -725,7 +943,85 @@
       exportBtn.addEventListener("click", onExportClick);
     }
 
+    // Quick date pickers
+    const quickToday = document.getElementById("quickToday");
+    const quick7Days = document.getElementById("quick7Days");
+    const quick30Days = document.getElementById("quick30Days");
+    const quickYear = document.getElementById("quickYear");
+
+    if (quickToday) {
+      quickToday.addEventListener("click", () => setQuickDateRange(0));
+    }
+    if (quick7Days) {
+      quick7Days.addEventListener("click", () => setQuickDateRange(7));
+    }
+    if (quick30Days) {
+      quick30Days.addEventListener("click", () => setQuickDateRange(30));
+    }
+    if (quickYear) {
+      quickYear.addEventListener("click", () => setQuickDateRange(365));
+    }
+
+    // Format selector listeners
+    if (exportFormatRadios) {
+      exportFormatRadios.forEach(radio => {
+        radio.addEventListener("change", showExportPreview);
+      });
+    }
+
+    // API mode listeners for preview
+    if (apiModeToggle) {
+      apiModeToggle.addEventListener("change", showExportPreview);
+    }
+
+    // Filter controls
+    const filterAuthor = document.getElementById("filterAuthor");
+    const filterKeywords = document.getElementById("filterKeywords");
+    const resetFiltersBtn = document.getElementById("resetFilters");
+
+    if (filterAuthor) {
+      filterAuthor.addEventListener("change", showExportPreview);
+    }
+    if (filterKeywords) {
+      filterKeywords.addEventListener("change", showExportPreview);
+    }
+    if (resetFiltersBtn) {
+      resetFiltersBtn.addEventListener("click", () => {
+        document.getElementById("filterAuthor").value = "";
+        document.getElementById("filterKeywords").value = "";
+        document.getElementById("filterMatchAll").checked = false;
+        document.getElementById("filterExcludeBots").checked = false;
+        document.getElementById("filterRemoveDuplicates").checked = true;
+        showExportPreview();
+        setStatus("Фильтры сброшены.");
+      });
+    }
+
+    // Show initial preview
+    showExportPreview();
+
     refreshChannelInfo();
+  }
+
+  // Listen for progress updates from content script
+  if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage) {
+    chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+      if (!request || request.action !== 'EXPORT_PROGRESS') return;
+
+      const collected = Number(request.collected || 0);
+      const loops = Number(request.loops || 0);
+
+      if (progressCountEl) {
+        progressCountEl.style.display = 'block';
+        progressCountEl.textContent = `Собрано: ${collected} сообщений (итераций: ${loops})`;
+      }
+
+      if (progressEl) {
+        progressEl.style.display = 'block';
+        // Remove specific value to show indeterminate animation
+        progressEl.removeAttribute('value');
+      }
+    });
   }
 
   window.DiscordExporterPopup = {

@@ -1,0 +1,57 @@
+{
+  "env": {
+    "browser": true,
+    "es2021": true,
+    "node": true,
+    "webextensions": true
+  },
+  "extends": "eslint:recommended",
+  "parserOptions": {
+    "ecmaVersion": "latest",
+    "sourceType": "module"
+  },
+  "rules": {
+    "no-unused-vars": [
+      "warn",
+      {
+        "args": "none",
+        "ignoreRestSiblings": true
+      }
+    ],
+    "no-console": [
+      "warn",
+      {
+        "allow": ["warn", "error"]
+      }
+    ],
+    "no-var": "warn",
+    "prefer-const": "warn",
+    "prefer-template": "warn",
+    "eqeqeq": ["warn", "always"],
+    "semi": ["warn", "always"],
+    "quotes": ["warn", "single", {"avoidEscape": true}],
+    "indent": ["warn", 2],
+    "comma-dangle": ["warn", "never"],
+    "trailing-comma": "off",
+    "object-curly-spacing": ["warn", "always"],
+    "array-bracket-spacing": ["warn", "never"],
+    "space-before-function-paren": ["warn", "never"],
+    "arrow-spacing": "warn",
+    "no-multiple-empty-lines": ["warn", {"max": 2}],
+    "no-trailing-spaces": "warn",
+    "keyword-spacing": "warn",
+    "space-before-blocks": "warn",
+    "no-implicit-globals": "off",
+    "func-style": ["warn", "expression"],
+    "no-return-assign": "off",
+    "no-param-reassign": "off"
+  },
+  "globals": {
+    "DiscordExporterPopup": "readonly",
+    "DiscordExporterContent": "readonly",
+    "DiscordExporterErrorHandler": "readonly",
+    "DiscordExporterSelectors": "readonly",
+    "DiscordExporterJsonExporter": "readonly",
+    "DiscordExporterMarkdownExporter": "readonly"
+  }
+}

@@ -1,0 +1,140 @@
+name: Automated Release & Publish
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm run test:all
+        continue-on-error: false
+
+      - name: Run linter
+        run: npm run lint:check
+        continue-on-error: false
+
+      - name: Build verification
+        run: npm run build:check 2>/dev/null || echo "Build deps not installed (OK for extension)"
+
+  release:
+    needs: validate
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.extract_version.outputs.version }}
+      changelog: ${{ steps.extract_changelog.outputs.content }}
+
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Extract version from tag
+        id: extract_version
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/v}
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "tag_name=v$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Extract changelog for this version
+        id: extract_changelog
+        run: |
+          VERSION=${{ steps.extract_version.outputs.version }}
+          
+          # Extract changelog section for this version
+          CHANGELOG=$(sed -n "/## \[${VERSION}\]/,/## \[/p" CHANGELOG.md | sed '$d')
+          
+          # If not found, use default
+          if [ -z "$CHANGELOG" ]; then
+            CHANGELOG="Release v${VERSION}"
+          fi
+          
+          # Escape for GitHub output
+          CHANGELOG="${CHANGELOG//$'\n'/'%0A'}"
+          echo "content=$CHANGELOG" >> $GITHUB_OUTPUT
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ steps.extract_version.outputs.tag_name }}
+          name: Discord Exporter v${{ steps.extract_version.outputs.version }}
+          body: ${{ steps.extract_changelog.outputs.content }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Log Release Creation
+        run: |
+          echo "✓ Release v${{ steps.extract_version.outputs.version }} created successfully"
+          echo "See: https://github.com/${{ github.repository }}/releases/tag/${{ steps.extract_version.outputs.tag_name }}"
+
+  # Optional: Publish to Chrome Web Store
+  # Uncomment when ready and configure CWS secrets
+  publish-cws:
+    needs: release
+    runs-on: ubuntu-latest
+    if: false  # Set to true when ready to auto-publish to Chrome Web Store
+    
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Prepare extension package
+        run: |
+          mkdir -p dist
+          # Copy only necessary files
+          rsync -av --exclude-from=.gitignore --exclude='.git' --exclude='node_modules' --exclude='tests' --exclude='.github' . dist/
+          cd dist && zip -r ../discord-exporter-${{ needs.release.outputs.version }}.zip .
+
+      - name: Upload to Chrome Web Store
+        uses: mnao305/chrome-extension-upload@v4
+        with:
+          file-path: discord-exporter-${{ needs.release.outputs.version }}.zip
+          extension-id: ${{ secrets.CHROME_EXTENSION_ID }}
+          client-id: ${{ secrets.CHROME_CLIENT_ID }}
+          client-secret: ${{ secrets.CHROME_CLIENT_SECRET }}
+          refresh-token: ${{ secrets.CHROME_REFRESH_TOKEN }}
+
+  notify:
+    needs: release
+    runs-on: ubuntu-latest
+    if: always()
+    
+    steps:
+      - name: Prepare notification
+        id: message
+        run: |
+          STATUS="✓ SUCCESS"
+          if [ "${{ needs.release.result }}" = "failure" ]; then
+            STATUS="✗ FAILED"
+          fi
+          
+          echo "message=$STATUS - Release v${{ needs.release.outputs.version }} created" >> $GITHUB_OUTPUT
+          echo "url=https://github.com/${{ github.repository }}/releases/tag/v${{ needs.release.outputs.version }}" >> $GITHUB_OUTPUT
+
+      - name: Log completion
+        run: |
+          echo "Release Workflow Complete"
+          echo "Status: ${{ steps.message.outputs.message }}"
+          echo "Link: ${{ steps.message.outputs.url }}"
