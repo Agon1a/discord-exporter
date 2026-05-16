@@ -11,20 +11,20 @@
   <main>
     <header class="hero">
       <div class="hero-top">
-        <div class="eyebrow">Discord Exporter</div>
+        <div class="eyebrow" data-i18n="title">Discord Exporter</div>
         <label class="theme-switch" title="Переключить тему">
-          <span>Тёмная тема</span>
+          <span data-i18n="darkTheme">Тёмная тема</span>
           <input type="checkbox" id="themeToggle" aria-label="Переключить тему">
         </label>
       </div>
       <h1>Экспорт чата в CSV</h1>
-      <p class="subtitle">Выберите диапазон дат и скачайте CSV с сообщениями выбранного канала.</p>
+      <p class="subtitle" data-i18n="description">Выберите диапазон дат и скачайте CSV с сообщениями выбранного канала.</p>
     </header>
 
     <section class="channel-card" aria-live="polite">
       <div class="channel-avatar" id="channelAvatar">D</div>
       <div class="channel-text">
-        <div class="channel-guild" id="channelGuild">Открытый канал</div>
+        <div class="channel-guild" id="channelGuild" data-i18n="channelInfo">Открытый канал</div>
         <div class="channel-line">
           <span class="channel-hash" id="channelPrefix">#</span>
           <span class="channel-name" id="channelName">Проверяется активная вкладка...</span>
@@ -35,8 +35,8 @@
     <section class="api-card">
       <div class="api-header">
         <div class="api-title-group">
-          <div class="api-title">Быстрый режим</div>
-          <div class="api-subtitle">Без прокрутки страницы (использует текущую сессию Discord)</div>
+          <div class="api-title" data-i18n="fastMode">Быстрый режим</div>
+          <div class="api-subtitle" data-i18n="fastModeDesc">Без прокрутки страницы (использует текущую сессию Discord)</div>
         </div>
         <label class="mode-switch" title="Включить быстрый режим">
           <span>FAST</span>
@@ -50,20 +50,77 @@
 
     <section class="card">
       <label class="field">
-        <span class="label">С (дата)</span>
+        <span class="label" data-i18n="fromDate">С (дата)</span>
         <input type="date" id="fromDate">
       </label>
       <label class="field">
-        <span class="label">По (дата)</span>
+        <span class="label" data-i18n="toDate">По (дата)</span>
         <input type="date" id="toDate">
       </label>
+      
+      <div class="quick-dates">
+        <span class="quick-label" data-i18n="quickLabel">Быстро:</span>
+        <button type="button" id="quickToday" class="quick-btn" data-i18n="quickToday" title="Сегодня">Сегодня</button>
+        <button type="button" id="quick7Days" class="quick-btn" data-i18n="quick7Days" title="Последние 7 дни">7 дней</button>
+        <button type="button" id="quick30Days" class="quick-btn" data-i18n="quick30Days" title="Последние 30 дней">30 дней</button>
+        <button type="button" id="quickYear" class="quick-btn" data-i18n="quickYear" title="Последний год">Год</button>
+      </div>
     </section>
 
-    <button id="exportBtn" class="primary">Экспортировать</button>
+    <section class="card">
+      <div class="export-formats">
+        <span class="format-label" data-i18n="format">Формат:</span>
+        <label class="format-option">
+          <input type="radio" name="exportFormat" value="csv" checked> <span data-i18n="csv">CSV</span>
+        </label>
+        <label class="format-option">
+          <input type="radio" name="exportFormat" value="json"> <span data-i18n="json">JSON</span>
+        </label>
+        <label class="format-option">
+          <input type="radio" name="exportFormat" value="markdown"> <span data-i18n="markdown">Markdown</span>
+        </label>
+      </div>
+    </section>
+
+    <section class="card">
+      <details id="filtersDetails" class="filters-group">
+        <summary class="filters-summary" data-i18n="filters">⚙️ Расширенные фильтры</summary>
+        <div class="filters-content">
+          <label class="field">
+            <span class="label" data-i18n="filterAuthor">Автор (имя или pattern)</span>
+            <input type="text" id="filterAuthor" placeholder="Оставьте пусто для всех">
+          </label>
+          <label class="field">
+            <span class="label" data-i18n="filterKeywords">Ключевые слова (через запятую)</span>
+            <input type="text" id="filterKeywords" placeholder="text1, text2, ...">
+          </label>
+          <label class="field checkbox">
+            <input type="checkbox" id="filterMatchAll"> <span data-i18n="filterMatchAll">Требовать все ключевые слова (AND)</span>
+          </label>
+          <label class="field checkbox">
+            <input type="checkbox" id="filterExcludeBots"> <span data-i18n="filterExcludeBots">Исключить сообщения ботов</span>
+          </label>
+          <label class="field checkbox">
+            <input type="checkbox" id="filterRemoveDuplicates" checked> <span data-i18n="filterRemoveDuplicates">Удалить дубликаты</span>
+          </label>
+          <button type="button" id="resetFilters" class="secondary" data-i18n="resetFilters">Сбросить фильтры</button>
+        </div>
+      </details>
+    </section>
+
+    <button id="exportBtn" class="primary" data-i18n="exportBtn">Экспортировать</button>
+    <progress id="exportProgress" class="export-progress" max="100" style="display:none; width:100%;"></progress>
+    <div id="progressCount" class="progress-count" aria-live="polite" style="display:none;"></div>
     <div id="status" class="status" aria-live="polite"></div>
   </main>
 
+  <script src="../src/lib/i18n.js"></script>
   <script src="../src/lib/shared-utils.js"></script>
+  <script src="../src/lib/error-handler.js"></script>
+  <script src="../src/lib/filters.js"></script>
+  <script src="../src/lib/exporters/csv-exporter.js"></script>
+  <script src="../src/lib/exporters/json-exporter.js"></script>
+  <script src="../src/lib/exporters/markdown-exporter.js"></script>
   <script src="../src/lib/popup-utils.js"></script>
   <script src="../src/popup.js"></script>
 </body>

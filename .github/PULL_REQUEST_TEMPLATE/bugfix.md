@@ -14,7 +14,8 @@
 - 
 
 ## Checklist
-- [ ] Self-check done, issue reproduced/resolved
+- [ ] Local verification completed
+- [ ] Issue reproduced or covered before fix
 - [ ] Main flow tested manually
-- [ ] README/docs updated (if needed)
-- [ ] No unrelated changes committed
+- [ ] README/docs updated when needed
+- [ ] No unrelated changes included

@@ -1,22 +1,137 @@
-﻿name: Tests
+﻿name: Tests & Linting
 
 on:
-  pull_request:
   push:
-    branches:
-      - main
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
 
 jobs:
-  unit-tests:
+  test:
+    name: Unit Tests (Node ${{ matrix.node-version }})
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [18.x, 20.x]
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node
+      - name: Setup Node.js ${{ matrix.node-version }}
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
 
-      - name: Run tests
-        run: npm test
+      - name: Install dependencies
+        run: npm install
+
+      - name: Run all unit tests
+        run: npm run test:all
+
+      - name: Run exporter tests
+        run: npm run test:exporters
+
+  lint:
+    name: Code Quality (ESLint)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Run ESLint
+        run: npm run lint:check
+
+  build-check:
+    name: Build Verification
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Verify manifest.json exists
+        run: |
+          if [ ! -f "manifest.json" ]; then
+            echo "❌ manifest.json not found!"
+            exit 1
+          fi
+          echo "✅ manifest.json found"
+
+      - name: Verify essential files
+        run: |
+          files=(
+            "public/popup.html"
+            "public/styles.css"
+            "src/popup.js"
+            "src/content.js"
+            "src/lib/popup-utils.js"
+            "src/lib/content-utils.js"
+            "src/lib/shared-utils.js"
+          )
+          for file in "${files[@]}"; do
+            if [ ! -f "$file" ]; then
+              echo "❌ Missing: $file"
+              exit 1
+            fi
+            echo "✅ $file"
+          done
+
+      - name: Verify exporters
+        run: |
+          exporters=(
+            "src/lib/exporters/csv-exporter.js"
+            "src/lib/exporters/json-exporter.js"
+            "src/lib/exporters/markdown-exporter.js"
+          )
+          for exporter in "${exporters[@]}"; do
+            if [ ! -f "$exporter" ]; then
+              echo "❌ Missing: $exporter"
+              exit 1
+            fi
+            echo "✅ $exporter"
+          done
+
+      - name: Verify utilities
+        run: |
+          utils=(
+            "src/lib/selectors.js"
+            "src/lib/error-handler.js"
+            "src/lib/filters.js"
+          )
+          for util in "${utils[@]}"; do
+            if [ ! -f "$util" ]; then
+              echo "❌ Missing: $util"
+              exit 1
+            fi
+            echo "✅ $util"
+          done
+
+      - name: Verify test files
+        run: |
+          if [ ! -d "tests" ]; then
+            echo "❌ tests/ directory not found"
+            exit 1
+          fi
+          echo "✅ tests/ directory found"
+
+      - name: Build status
+        run: |
+          echo "## ✅ Build Verification Passed"
+          echo ""
+          echo "- manifest.json: ✅"
+          echo "- Essential files: ✅"
+          echo "- All 3 exporters: ✅"
+          echo "- Utilities (selectors, error handler, filters): ✅"
+          echo "- Tests directory: ✅"
