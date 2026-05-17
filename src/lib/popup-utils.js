@@ -507,7 +507,7 @@
      * @returns {Promise<any>}
      */
     async function fetchJson(url, token) {
-      while (true) {
+      for (;;) {
         const res = await fetch(url, {
           headers: {
             Authorization: token

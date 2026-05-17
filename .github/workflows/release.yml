@@ -13,14 +13,14 @@ jobs:
   validate:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
       - name: Set up Node.js
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v5
         with:
-          node-version: '18'
+          node-version: '24.x'
           cache: 'npm'
 
       - name: Install dependencies
@@ -35,7 +35,13 @@ jobs:
         continue-on-error: false
 
       - name: Build verification
-        run: npm run build:check 2>/dev/null || echo "Build deps not installed (OK for extension)"
+        run: |
+          test -f manifest.json
+          test -f public/popup.html
+          test -f public/styles.css
+          test -f src/lib/shared-utils.js
+          test -f src/lib/content-utils.js
+          test -f src/content.js
 
   release:
     needs: validate
@@ -45,7 +51,7 @@ jobs:
       changelog: ${{ steps.extract_changelog.outputs.content }}
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
@@ -60,25 +66,51 @@ jobs:
         id: extract_changelog
         run: |
           VERSION=${{ steps.extract_version.outputs.version }}
-          
-          # Extract changelog section for this version
-          CHANGELOG=$(sed -n "/## \[${VERSION}\]/,/## \[/p" CHANGELOG.md | sed '$d')
-          
-          # If not found, use default
-          if [ -z "$CHANGELOG" ]; then
+
+          if [ -f CHANGELOG.md ]; then
+            CHANGELOG=$(sed -n "/## \[${VERSION}\]/,/## \[/p" CHANGELOG.md | sed '$d')
+          fi
+
+          if [ -z "${CHANGELOG:-}" ]; then
             CHANGELOG="Release v${VERSION}"
           fi
-          
-          # Escape for GitHub output
+
           CHANGELOG="${CHANGELOG//$'\n'/'%0A'}"
           echo "content=$CHANGELOG" >> $GITHUB_OUTPUT
 
+      - name: Build browser extension package
+        run: |
+          VERSION=${{ steps.extract_version.outputs.version }}
+          DIST="dist/discord-exporter-v${VERSION}"
+          mkdir -p "$DIST/public/icons" "$DIST/src/lib/exporters"
+
+          cp manifest.json "$DIST/"
+          cp public/popup.html "$DIST/public/"
+          cp public/styles.css "$DIST/public/"
+          cp public/icons/icon16.png "$DIST/public/icons/"
+          cp public/icons/icon48.png "$DIST/public/icons/"
+          cp public/icons/icon128.png "$DIST/public/icons/"
+          cp src/content.js "$DIST/src/"
+          cp src/popup.js "$DIST/src/"
+          cp src/lib/shared-utils.js "$DIST/src/lib/"
+          cp src/lib/content-utils.js "$DIST/src/lib/"
+          cp src/lib/i18n.js "$DIST/src/lib/"
+          cp src/lib/error-handler.js "$DIST/src/lib/"
+          cp src/lib/filters.js "$DIST/src/lib/"
+          cp src/lib/popup-utils.js "$DIST/src/lib/"
+          cp src/lib/exporters/csv-exporter.js "$DIST/src/lib/exporters/"
+          cp src/lib/exporters/json-exporter.js "$DIST/src/lib/exporters/"
+          cp src/lib/exporters/markdown-exporter.js "$DIST/src/lib/exporters/"
+
+          (cd "$DIST" && zip -r "../discord-exporter-v${VERSION}.zip" .)
+
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ steps.extract_version.outputs.tag_name }}
           name: Discord Exporter v${{ steps.extract_version.outputs.version }}
           body: ${{ steps.extract_changelog.outputs.content }}
+          files: dist/discord-exporter-v${{ steps.extract_version.outputs.version }}.zip
           draft: false
           prerelease: false
           generate_release_notes: true
@@ -98,13 +130,29 @@ jobs:
     if: false  # Set to true when ready to auto-publish to Chrome Web Store
     
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v5
       
       - name: Prepare extension package
         run: |
           mkdir -p dist
-          # Copy only necessary files
-          rsync -av --exclude-from=.gitignore --exclude='.git' --exclude='node_modules' --exclude='tests' --exclude='.github' . dist/
+          mkdir -p dist/public/icons dist/src/lib/exporters
+          cp manifest.json dist/
+          cp public/popup.html dist/public/
+          cp public/styles.css dist/public/
+          cp public/icons/icon16.png dist/public/icons/
+          cp public/icons/icon48.png dist/public/icons/
+          cp public/icons/icon128.png dist/public/icons/
+          cp src/content.js dist/src/
+          cp src/popup.js dist/src/
+          cp src/lib/shared-utils.js dist/src/lib/
+          cp src/lib/content-utils.js dist/src/lib/
+          cp src/lib/i18n.js dist/src/lib/
+          cp src/lib/error-handler.js dist/src/lib/
+          cp src/lib/filters.js dist/src/lib/
+          cp src/lib/popup-utils.js dist/src/lib/
+          cp src/lib/exporters/csv-exporter.js dist/src/lib/exporters/
+          cp src/lib/exporters/json-exporter.js dist/src/lib/exporters/
+          cp src/lib/exporters/markdown-exporter.js dist/src/lib/exporters/
           cd dist && zip -r ../discord-exporter-${{ needs.release.outputs.version }}.zip .
 
       - name: Upload to Chrome Web Store

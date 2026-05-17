@@ -8,8 +8,6 @@
 		"test:exporters": "node --test tests/exporters.test.js",
 		"test:phase-v": "node --test tests/phase-v.test.js",
 		"test:all": "node --test tests/shared-utils.test.js tests/exporters.test.js tests/phase-v.test.js",
-		"test:e2e": "playwright test tests/e2e.test.js",
-		"test:e2e:ui": "playwright test tests/e2e.test.js --ui",
 		"lint": "eslint src/ --fix",
 		"lint:check": "eslint src/",
 		"release": "node scripts/release.js",
@@ -17,7 +15,6 @@
 		"release:github": "node scripts/release.js --auto --github"
 	},
 	"devDependencies": {
-		"eslint": "^8.56.0",
-		"@playwright/test": "^1.40.0"
+		"eslint": "^8.56.0"
 	}
 }

@@ -15,16 +15,21 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    env:
+      CHROME_EXTENSION_ID: ${{ secrets.CHROME_EXTENSION_ID }}
+      CHROME_CLIENT_ID: ${{ secrets.CHROME_CLIENT_ID }}
+      CHROME_CLIENT_SECRET: ${{ secrets.CHROME_CLIENT_SECRET }}
+      CHROME_REFRESH_TOKEN: ${{ secrets.CHROME_REFRESH_TOKEN }}
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v5
         with:
           ref: main
 
       - name: Set up Node.js
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v5
         with:
-          node-version: '18'
+          node-version: '24.x'
 
       - name: Prepare extension package
         id: prepare
@@ -36,21 +41,25 @@ jobs:
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "📦 Preparing v$VERSION for upload..."
           
-          # Create dist directory
-          mkdir -p dist
-          
-          # Copy only necessary files (exclude test, .git, node_modules)
-          rsync -av --exclude-from=.gitignore \
-            --exclude='.git' \
-            --exclude='node_modules' \
-            --exclude='tests' \
-            --exclude='.github' \
-            --exclude='README*' \
-            --exclude='CHANGELOG.md' \
-            --exclude='scripts' \
-            --exclude='*.md' \
-            . dist/
-          
+          mkdir -p dist/public/icons dist/src/lib/exporters
+          cp manifest.json dist/
+          cp public/popup.html dist/public/
+          cp public/styles.css dist/public/
+          cp public/icons/icon16.png dist/public/icons/
+          cp public/icons/icon48.png dist/public/icons/
+          cp public/icons/icon128.png dist/public/icons/
+          cp src/content.js dist/src/
+          cp src/popup.js dist/src/
+          cp src/lib/shared-utils.js dist/src/lib/
+          cp src/lib/content-utils.js dist/src/lib/
+          cp src/lib/i18n.js dist/src/lib/
+          cp src/lib/error-handler.js dist/src/lib/
+          cp src/lib/filters.js dist/src/lib/
+          cp src/lib/popup-utils.js dist/src/lib/
+          cp src/lib/exporters/csv-exporter.js dist/src/lib/exporters/
+          cp src/lib/exporters/json-exporter.js dist/src/lib/exporters/
+          cp src/lib/exporters/markdown-exporter.js dist/src/lib/exporters/
+
           # Create zip
           cd dist && zip -r ../discord-exporter-$VERSION.zip .
           cd ..
@@ -60,11 +69,6 @@ jobs:
 
       - name: Upload to Chrome Web Store
         if: env.CHROME_EXTENSION_ID != ''
-        env:
-          CHROME_EXTENSION_ID: ${{ secrets.CHROME_EXTENSION_ID }}
-          CHROME_CLIENT_ID: ${{ secrets.CHROME_CLIENT_ID }}
-          CHROME_CLIENT_SECRET: ${{ secrets.CHROME_CLIENT_SECRET }}
-          CHROME_REFRESH_TOKEN: ${{ secrets.CHROME_REFRESH_TOKEN }}
         run: |
           VERSION="${{ steps.prepare.outputs.version }}"
           ZIP_FILE="discord-exporter-$VERSION.zip"
@@ -113,36 +117,16 @@ jobs:
           client-secret: ${{ secrets.CHROME_CLIENT_SECRET }}
           refresh-token: ${{ secrets.CHROME_REFRESH_TOKEN }}
 
-      - name: Post release comment
-        if: github.event.release
-        uses: actions/github-script@v6
-        with:
-          script: |
-            github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: `Chrome Web Store upload completed for version ${{ steps.prepare.outputs.version }}.\n\n**Update status:** Extension review is in progress. Store publication usually completes within about 1 hour.\n\n**Dashboard:** https://chrome.google.com/webstore/developer/dashboard`
-            })
-
-      - name: Notify on failed upload
-        if: failure()
-        uses: actions/github-script@v6
-        with:
-          script: |
-            github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: `❌ Failed to upload extension to Chrome Web Store.\n\n**Troubleshooting:**\n- Check GitHub Secrets are configured (CHROME_EXTENSION_ID, CHROME_CLIENT_ID, etc.)\n- Verify refresh token is still valid\n- Check Chrome Web Store API is enabled\n\n📝 See [workflow logs](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}) for details.`
-            })
-
       - name: Summary
         run: |
           echo "## Chrome Web Store Upload" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "- **Version:** ${{ steps.prepare.outputs.version }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Status:** Uploaded (review in progress)" >> $GITHUB_STEP_SUMMARY
+          if [ -z "$CHROME_EXTENSION_ID" ]; then
+            echo "- **Status:** Skipped (Chrome Web Store secrets are not configured)" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- **Status:** Uploaded (review in progress)" >> $GITHUB_STEP_SUMMARY
+          fi
           echo "- **ETA:** ~1 hour for approval" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "[View on Chrome Web Store](https://chrome.google.com/webstore/developer/dashboard)" >> $GITHUB_STEP_SUMMARY

@@ -193,12 +193,6 @@ Check code style:
 npm run lint:check
 ```
 
-Run Playwright e2e tests:
-
-```bash
-npm run test:e2e
-```
-
 ## Release
 
 Release scripts are defined in `package.json`.

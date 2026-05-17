@@ -1,0 +1,6 @@
+node_modules/
+.npm-cache/
+.release/
+dist/
+*.zip
+npm-debug.log*

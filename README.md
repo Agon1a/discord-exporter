@@ -168,7 +168,7 @@ Hello!
 - `src/lib/batch.js` - модель batch-экспорта.
 - `src/lib/history.js` - модель истории экспортов.
 - `src/lib/exporters/` - экспортеры CSV, JSON и Markdown.
-- `tests/` - unit и e2e тесты.
+- `tests/` - unit-тесты.
 - `scripts/release.js` - скрипт подготовки релиза.
 
 ## 🌐 Локализация
@@ -193,12 +193,6 @@ npm run test:all
 
 ```bash
 npm run lint:check
-```
-
-E2E-тесты Playwright:
-
-```bash
-npm run test:e2e
 ```
 
 ## 📦 Релиз
